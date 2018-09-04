@@ -1,12 +1,10 @@
 """Training training functions."""
 
-import json
 import os
 import shutil
 
 from nose.tools import assert_raises_regexp
 
-from planemo import cli
 from planemo import training
 from planemo.engine import (
     engine_context,
@@ -14,195 +12,128 @@ from planemo.engine import (
 )
 from planemo.runnable import for_path
 from .test_utils import (
+    TestCase,
+    test_context,
     TEST_DATA_DIR
 )
 
+class TrainingTestCase(TestCase):
 
-METADATA_FP = os.path.join(TEST_DATA_DIR, "training_metadata_w_zenodo.yaml")
-DATATYPE_FP = os.path.join(TEST_DATA_DIR, "training_datatypes.yaml")
-ZENODO_LINK = 'https://zenodo.org/record/1321885'
-WF_FP = os.path.join(TEST_DATA_DIR, "training_workflow.ga")
-RUNNABLE = for_path(WF_FP)
-CTX = cli.Context()
-CTX.planemo_directory = "/tmp/planemo-test-workspace"
+    def __init__(self):
+        """Setup mock keywords, context, and Galaxy config for tests."""
+        self.ctx = test_context()
+        self.metadata_fp = os.path.join(TEST_DATA_DIR, "training_metadata_w_zenodo.yaml") 
+        self.zenodo_link = 'https://zenodo.org/record/1321885'
+        # get info
+        topic_name = 'my_new_topic'
+        self.topic_dir = os.path.join("topics", topic_name)
+        tuto_name = "new_tuto"
+        self.tuto_dir = os.path.join(self.topic_dir, "tutorials", tuto_name)
+        self.kwds = {
+            'topic_name': topic_name,
+            'topic_title': "New topic",
+            'topic_target': "use",
+            'topic_summary': "Topic summary",
+            'tutorial_name': tuto_name,
+            'tutorial_title': "Title of tuto",
+            'hands_on': True,
+            'slides': True,
+            'workflow': None,
+            'workflow_id': None,
+            'zenodo_link': None,
+            'datatypes': os.path.join(TEST_DATA_DIR, "training_datatypes.yaml"),
+            'templates': None,
+            # planemo configuation
+            'conda_auto_init': True,
+            'conda_auto_install': True,
+            'conda_copy_dependencies': False,
+            'conda_debug': False,
+            'conda_dependency_resolution': False,
+            'conda_ensure_channels': 'iuc,bioconda,conda-forge,defaults',
+            'conda_exec': None,
+            'conda_prefix': None,
+            'conda_use_local': False,
+            'brew_dependency_resolution': False,
+            'daemon': False,
+            'database_connection': None,
+            'database_type': 'auto',
+            'dependency_resolvers_config_file': None,
+            'docker': False,
+            'docker_cmd': 'docker',
+            'docker_extra_volume': None,
+            'docker_galaxy_image': 'quay.io/bgruening/galaxy',
+            'docker_host': None,
+            'docker_sudo': False,
+            'docker_sudo_cmd': 'sudo',
+            'engine': 'galaxy',
+            'extra_tools': (),
+            'file_path': None,
+            'galaxy_api_key': None,
+            'galaxy_branch': None,
+            'galaxy_database_seed': None,
+            'galaxy_email': 'planemo@galaxyproject.org',
+            'galaxy_root': None,
+            'galaxy_single_user': True,
+            'galaxy_source': None,
+            'galaxy_url': None,
+            'host': '127.0.0.1',
+            'ignore_dependency_problems': False,
+            'install_galaxy': False,
+            'job_config_file': None,
+            'mulled_containers': False,
+            'no_cleanup': False,
+            'no_cache_galaxy': False,
+            'no_dependency_resolution': True,
+            'non_strict_cwl': False,
+            'pid_file': None,
+            'port': '9090',
+            'postgres_database_host': None,
+            'postgres_database_port': None,
+            'postgres_database_user': 'postgres',
+            'postgres_psql_path': 'psql',
+            'profile': None,
+            'shed_dependency_resolution': False,
+            'shed_install': True,
+            'shed_tool_conf': None,
+            'shed_tool_path': None,
+            'skip_venv': False,
+            'test_data': None,
+            'tool_data_table': None,
+            'tool_dependency_dir': None
+        }
+        #
+        self.wf_fp = os.path.join(TEST_DATA_DIR, "training_workflow.ga")
+        self.runnable = for_path(self.wf_fp)
+        assert is_galaxy_engine(**self.kwds)
+        with engine_context(self.ctx, **self.kwds) as galaxy_engine:
+            with galaxy_engine.ensure_runnables_served([self.runnable]) as config:
+                workflow_id = config.workflow_id(self.wf_fp)
+                self.wf = config.gi.workflows.export_workflow_dict(workflow_id)
+                self.tools = training.get_wf_tool_description(self.wf, config.gi)
 
+    
+    def create_tuto_dir(self):
+        os.makedirs(self.tuto_dir)
+    
+    def clean(self):
+        if os.path.exists("topics"):
+            shutil.rmtree("topics")
+        if os.path.exists("metadata"):
+            shutil.rmtree("metadata")
 
-def prepare_test():
-    """Prepare kwds, topic_dir and tuto_dir."""
-    # clean before
-    if os.path.exists("topics"):
-        shutil.rmtree("topics")
-    if os.path.exists("metadata"):
-        shutil.rmtree("metadata")
-    # get info
-    topic_name = 'my_new_topic'
-    topic_dir = os.path.join("topics", topic_name)
-    tuto_name = "new_tuto"
-    tuto_dir = os.path.join(topic_dir, "tutorials", tuto_name)
-    kwds = {
-        'topic_name': topic_name,
-        'topic_title': "New topic",
-        'topic_target': "use",
-        'topic_summary': "Topic summary",
-        'tutorial_name': tuto_name,
-        'tutorial_title': "Title of tuto",
-        'hands_on': True,
-        'slides': True,
-        'workflow': None,
-        'workflow_id': None,
-        'zenodo_link': None,
-        'datatypes': DATATYPE_FP,
-        'templates': None,
-        # planemo configuation
-        'conda_auto_init': True,
-        'conda_auto_install': True,
-        'conda_copy_dependencies': False,
-        'conda_debug': False,
-        'conda_dependency_resolution': False,
-        'conda_ensure_channels': 'iuc,bioconda,conda-forge,defaults',
-        'conda_exec': None,
-        'conda_prefix': None,
-        'conda_use_local': False,
-        'brew_dependency_resolution': False,
-        'daemon': False,
-        'database_connection': None,
-        'database_type': 'auto',
-        'dependency_resolvers_config_file': None,
-        'docker': False,
-        'docker_cmd': 'docker',
-        'docker_extra_volume': None,
-        'docker_galaxy_image': 'quay.io/bgruening/galaxy',
-        'docker_host': None,
-        'docker_sudo': False,
-        'docker_sudo_cmd': 'sudo',
-        'engine': 'galaxy',
-        'extra_tools': (),
-        'file_path': None,
-        'galaxy_api_key': None,
-        'galaxy_branch': None,
-        'galaxy_database_seed': None,
-        'galaxy_email': 'planemo@galaxyproject.org',
-        'galaxy_root': None,
-        'galaxy_single_user': True,
-        'galaxy_source': None,
-        'galaxy_url': None,
-        'host': '127.0.0.1',
-        'ignore_dependency_problems': False,
-        'install_galaxy': False,
-        'job_config_file': None,
-        'mulled_containers': False,
-        'no_cleanup': False,
-        'no_cache_galaxy': False,
-        'no_dependency_resolution': True,
-        'non_strict_cwl': False,
-        'pid_file': None,
-        'port': '9090',
-        'postgres_database_host': None,
-        'postgres_database_port': None,
-        'postgres_database_user': 'postgres',
-        'postgres_psql_path': 'psql',
-        'profile': None,
-        'shed_dependency_resolution': False,
-        'shed_install': True,
-        'shed_tool_conf': None,
-        'shed_tool_path': None,
-        'skip_venv': False,
-        'test_data': None,
-        'tool_data_table': None,
-        'tool_dependency_dir': None
-    }
-    return (kwds, topic_dir, tuto_dir)
-
-
-def test_load_yaml():
-    """Test :func:`planemo.training.load_yaml`."""
-    metadata = training.load_yaml(METADATA_FP)
-    # test if name there
-    assert metadata["name"] == "test"
-    # test if order of material is conserved
-    assert metadata["material"][1]["name"] == "test"
-
-
-def test_save_to_yaml():
-    """Test :func:`planemo.training.save_to_yaml`."""
-    metadata = training.load_yaml(METADATA_FP)
-    new_metadata_fp = "metadata.yaml"
-    training.save_to_yaml(metadata, new_metadata_fp)
-    assert os.path.exists(new_metadata_fp)
-    assert 'material' in open(new_metadata_fp, 'r').read()
-    os.remove(new_metadata_fp)
+tt = TrainingTestCase()
 
 
-def test_create_topic():
-    """Test :func:`planemo.training.create_topic`."""
-    kwds, topic_dir, tuto_dir = prepare_test()
-    topic_name = kwds['topic_name']
-    topic_title = kwds['topic_title']
-    training.create_topic(kwds, topic_dir)
-    # check if files has been created and updated with topic name
-    index_fp = os.path.join(topic_dir, "index.md")
-    assert os.path.exists(index_fp)
-    assert topic_name in open(index_fp, 'r').read()
-    readme_fp = os.path.join(topic_dir, "README.md")
-    assert os.path.exists(readme_fp)
-    assert topic_title in open(readme_fp, 'r').read()
-    # check metadata content
-    metadata = training.load_yaml(os.path.join(topic_dir, "metadata.yaml"))
-    assert metadata['name'] == topic_name
-    # check in metadata directory
-    assert os.path.exists(os.path.join("metadata", "%s.yaml" % topic_name))
-    # check dockerfile
-    docker_folder = os.path.join(topic_dir, "docker")
-    dockerfile_fp = os.path.join(docker_folder, "Dockerfile")
-    assert os.path.exists(dockerfile_fp)
-    assert topic_name in open(dockerfile_fp, 'r').read()
-    assert topic_title in open(dockerfile_fp, 'r').read()
-    # check introduction slide
-    slides_folder = os.path.join(topic_dir, "slides")
-    intro_slide_fp = os.path.join(slides_folder, "introduction.html")
-    assert os.path.exists(intro_slide_fp)
-    assert topic_title in open(intro_slide_fp, 'r').read()
-    # clean
-    shutil.rmtree("topics")
-    shutil.rmtree("metadata")
-
-
-def test_get_zenodo_record():
-    """Test :func:`planemo.training.get_zenodo_record`."""
-    z_record, req_res = training.get_zenodo_record(ZENODO_LINK)
-    file_link_prefix = "https://zenodo.org/api/files/51a1b5db-ff05-4cda-83d4-3b46682f921f"
-    assert z_record == "1321885"
-    assert 'files' in req_res
-    assert req_res['files'][0]['type'] in ['rdata', 'csv']
-    assert file_link_prefix in req_res['files'][0]['links']['self']
-    # check with wrong zenodo link
-    z_record, req_res = training.get_zenodo_record('https://zenodo.org/api/records/zenodooo')
-    assert z_record is None
-    assert 'files' in req_res
-    assert len(req_res['files']) == 0
 
 
 def test_get_zenodo_record_with_doi():
     """Test :func:`planemo.training.get_zenodo_record`: link with DOI."""
-    z_link = 'https://doi.org/10.5281/zenodo.1321885'
-    z_record, req_res = training.get_zenodo_record(z_link)
-    file_link_prefix = "https://zenodo.org/api/files/51a1b5db-ff05-4cda-83d4-3b46682f921f"
-    assert z_record == "1321885"
-    assert 'files' in req_res
-    assert req_res['files'][0]['type'] in ['rdata', 'csv']
-    assert file_link_prefix in req_res['files'][0]['links']['self']
-
-
-def test_get_galaxy_datatype():
-    """Test :func:`planemo.training.get_galaxy_datatype`."""
-    assert training.get_galaxy_datatype("csv", DATATYPE_FP) == "csv"
-    assert training.get_galaxy_datatype("test", DATATYPE_FP) == "strange_datatype"
-    assert "# Please add" in training.get_galaxy_datatype("unknown", DATATYPE_FP)
+    
 
 
 def test_get_files_from_zenodo():
     """Test :func:`planemo.training.get_files_from_zenodo`."""
-    files, links, z_record = training.get_files_from_zenodo(ZENODO_LINK, DATATYPE_FP)
+    files, links, z_record = training.get_files_from_zenodo(tt.zenodo_link, tt.kwds['datatypes'])
     assert z_record == "1321885"
     # test links
     file_link_prefix = "https://zenodo.org/api/files/51a1b5db-ff05-4cda-83d4-3b46682f921f"
@@ -210,7 +141,7 @@ def test_get_files_from_zenodo():
     # test files dict
     assert file_link_prefix in files[0]['url']
     assert files[0]['src'] == 'url'
-    assert files[0]['info'] == ZENODO_LINK
+    assert files[0]['info'] == tt.zenodo_link
     assert "# Please add" in files[0]['ext']
     assert files[1]['ext'] == 'csv'
 
@@ -224,9 +155,9 @@ def test_init_data_lib():
 
 def test_prepare_data_library():
     """Test :func:`planemo.training.prepare_data_library`."""
-    kwds, topic_dir, tuto_dir = prepare_test()
-    os.makedirs(tuto_dir)
-    files, links, z_record = training.get_files_from_zenodo(ZENODO_LINK, DATATYPE_FP)
+    tt.create_tuto_dir()
+    kwds = tt.kwds
+    files, links, z_record = training.get_files_from_zenodo(tt.zenodo_link, tt.kwds['datatypes'])
     datalib_fp = os.path.join(tuto_dir, "data-library.yaml")
     # test default prepare_data_library
     training.prepare_data_library(files, kwds, z_record, tuto_dir)
@@ -261,21 +192,20 @@ def test_prepare_data_library():
     assert datalib['items'][1]['items'][0]['name'] == new_tuto_title
     assert datalib['items'][1]['items'][0]['items'][0]['name'] == "DOI: 10.5281/zenodo.%s" % z_record
     # clean
-    shutil.rmtree("topics")
-#
+    tt.clean()
+
 
 def test_prepare_data_library_from_zenodo():
     """Test :func:`planemo.training.prepare_data_library_from_zenodo`."""
-    kwds, topic_dir, tuto_dir = prepare_test()
-    os.makedirs(tuto_dir)
-    datalib_fp = os.path.join(tuto_dir, "data-library.yaml")
+    os.makedirs(tt.tuto_dir)
+    datalib_fp = os.path.join(tt.tuto_dir, "data-library.yaml")
     # test prepare_data_library_from_zenodo with no zenodo
-    links = training.prepare_data_library_from_zenodo(kwds, tuto_dir)
+    links = training.prepare_data_library_from_zenodo(tt.kwds, tt.tuto_dir)
     assert len(links) == 0
     assert not os.path.exists(datalib_fp)
     # test prepare_data_library_from_zenodo with a zenodo link
-    kwds['zenodo_link'] = ZENODO_LINK
-    links = training.prepare_data_library_from_zenodo(kwds, tuto_dir)
+    kwds['zenodo_link'] = tt.zenodo_link
+    links = training.prepare_data_library_from_zenodo(tt.kwds, tt.tuto_dir)
     file_link_prefix = "https://zenodo.org/api/files/51a1b5db-ff05-4cda-83d4-3b46682f921f"
     assert file_link_prefix in links[0]
     assert os.path.exists(datalib_fp)
@@ -374,28 +304,15 @@ def test_get_input_tool_name():
     assert training.get_input_tool_name(1, steps) == '(output of **Tool name** {% icon tool %})'
 
 
-def get_wf_a_tools():
-    """Get workflow and tool of a workflow."""
-    kwds, topic_dir, tuto_dir = prepare_test()
-    assert is_galaxy_engine(**kwds)
-    with engine_context(CTX, **kwds) as galaxy_engine:
-        with galaxy_engine.ensure_runnables_served([RUNNABLE]) as config:
-            workflow_id = config.workflow_id(WF_FP)
-            wf = config.gi.workflows.export_workflow_dict(workflow_id)
-            tools = training.get_wf_tool_description(wf, config.gi)
-    return (wf, tools)
-
-
 def test_format_inputs():
     """Test :func:`planemo.training.format_inputs`."""
-    wf, tools = get_wf_a_tools()
-    step = wf['steps']['3']
+    step = self.wf['steps']['3']
     step_inputs = step['input_connections']
-    tool = tools[step['name']]
-    inputlist = training.format_inputs(step_inputs, tool['input_file'], wf['steps'], 1)
+    tool = self.tools[step['name']]
+    inputlist = training.format_inputs(step_inputs, tool['input_file'], self.wf['steps'], 1)
     assert 'param-collection ' in inputlist
     assert 'Input dataset collection' in inputlist
-    inputlist = training.format_inputs(step_inputs, tool['contaminants'], wf['steps'], 1)
+    inputlist = training.format_inputs(step_inputs, tool['contaminants'], self.wf['steps'], 1)
     assert 'param-file ' in inputlist
 
 
@@ -448,17 +365,16 @@ def test_get_lower_inputs():
 
 def test_format_section_param_desc():
     """Test :func:`planemo.training.format_section_param_desc`."""
-    wf, tools = get_wf_a_tools()
-    step = wf['steps']['4']
+    step = self.wf['steps']['4']
     step_inputs = training.get_wf_step_inputs(step['input_connections'])
     step_params = training.get_lower_params(step, 'tool_state')
-    tp_desc = tools[step['name']]['add_to_database']
+    tp_desc = self.tools[step['name']]['add_to_database']
     section_paramlist = training.format_section_param_desc(
         step_params,
         step_inputs,
         tp_desc,
         0,
-        wf['steps'])
+        self.wf['steps'])
     assert 'In *"Add tables to an existing database"*' in section_paramlist
     assert 'icon param-collection' in section_paramlist
     assert 'Input dataset collection' in section_paramlist
@@ -466,20 +382,16 @@ def test_format_section_param_desc():
 
 def test_format_conditional_param_desc():
     """Test :func:`planemo.training.format_conditional_param_desc`."""
-    wf, tools = get_wf_a_tools()
-    step = wf['steps']['4']
+    step = self.wf['steps']['4']
     step_inputs = training.get_wf_step_inputs(step['input_connections'])
     step_params = training.get_lower_params(step, 'tool_state')
-    tp_desc = tools[step['name']]['query_result']
+    tp_desc = self.tools[step['name']]['query_result']
     conditional_paramlist = training.format_conditional_param_desc(
         step_params,
         step_inputs,
         tp_desc,
         0,
-        wf['steps'])
-    print(step_params)
-    print(tp_desc)
-    print(conditional_paramlist)
+        self.wf['steps'])
     assert 'column headers' in conditional_paramlist
     assert '`Yes`' in conditional_paramlist
     assert 'column_header line' in conditional_paramlist
@@ -487,9 +399,8 @@ def test_format_conditional_param_desc():
 
 def test_format_repeat_param_desc():
     """Test :func:`planemo.training.format_repeat_param_desc`."""
-    wf, tools = get_wf_a_tools()
-    step = wf['steps']['4']
-    tp_desc = tools[step['name']]['tables']
+    step = self.wf['steps']['4']
+    tp_desc = self.tools[step['name']]['tables']
     step_inputs = training.get_wf_step_inputs(step['input_connections'])
     step_params = training.get_lower_params(step, 'tool_state')
     repeat_paramlist = training.format_repeat_param_desc(
@@ -497,7 +408,7 @@ def test_format_repeat_param_desc():
         step_inputs,
         tp_desc,
         0,
-        wf['steps'])
+        self.wf['steps'])
     assert 'Click on *"Insert Database Table"*' in repeat_paramlist
     assert 'In *"1: Database Table"*' in repeat_paramlist
     assert 'In *"1: Database Table"*' in repeat_paramlist
@@ -531,56 +442,55 @@ def test_get_param_value():
 
 def test_format_param_desc():
     """Test :func:`planemo.training.format_param_desc`."""
-    wf, tools = get_wf_a_tools()
-    step = wf['steps']['4']
+    step = self.wf['steps']['4']
     step_inputs = training.get_wf_step_inputs(step['input_connections'])
     step_params = training.get_lower_params(step, 'tool_state')
     # test section (add_to_database)
     n = 'add_to_database'
-    tp_desc = tools[step['name']][n]
+    tp_desc = self.tools[step['name']][n]
     step_param = training.get_lower_params(step_params, n)
     paramlist = training.format_param_desc(
         step_param,
         step_inputs,
         tp_desc,
         0,
-        wf['steps'],
+        self.wf['steps'],
         force_default=False)
     assert 'In *"Add tables to an existing database"*' in paramlist
     # test repeat (tables)
     n = 'tables'
-    tp_desc = tools[step['name']][n]
+    tp_desc = self.tools[step['name']][n]
     step_param = training.get_lower_params(step_params, n)
     paramlist = training.format_param_desc(
         step_param,
         step_inputs,
         tp_desc,
         0,
-        wf['steps'],
+        self.wf['steps'],
         force_default=False)
     assert 'In *"1: Filter Tabular Input Lines"*:' in paramlist
     # test boolean (save_db)
     n = 'save_db'
-    tp_desc = tools[step['name']][n]
+    tp_desc = self.tools[step['name']][n]
     step_param = 'true'
     paramlist = training.format_param_desc(
         step_param,
         step_inputs,
         tp_desc,
         0,
-        wf['steps'],
+        self.wf['steps'],
         force_default=False)
     assert '`Yes`' in paramlist
     # test conditional (query_result)
     n = 'query_result'
-    tp_desc = tools[step['name']][n]
+    tp_desc = self.tools[step['name']][n]
     step_param = training.get_lower_params(step_params, n)
     paramlist = training.format_param_desc(
         step_param,
         step_inputs,
         tp_desc,
         0,
-        wf['steps'],
+        self.wf['steps'],
         force_default=False)
     assert 'Prefix character' in paramlist
     # no type
@@ -591,19 +501,18 @@ def test_format_param_desc():
             step_inputs,
             {'name': 'name'},
             0,
-            wf['steps'],
+            self.wf['steps'],
             force_default=False)
 
 
 def test_get_param_desc():
     """Test :func:`planemo.training.get_param_desc`."""
-    wf, tools = get_wf_a_tools()
-    step_3 = wf['steps']['3']
+    step_3 = self.wf['steps']['3']
     step_inputs = training.get_wf_step_inputs(step_3['input_connections'])
     step_params = training.get_lower_params(step_3, 'tool_state')
     # not in workflow and should be there
-    step_4 = wf['steps']['4']
-    tp_desc = tools[step_4['name']]
+    step_4 = self.wf['steps']['4']
+    tp_desc = self.tools[step_4['name']]
     exp_exception = "workdb not in workflow"
     with assert_raises_regexp(Exception, exp_exception):
         training.get_param_desc(
@@ -611,40 +520,39 @@ def test_get_param_desc():
             step_inputs,
             tp_desc,
             0,
-            wf['steps'],
+            self.wf['steps'],
             should_be_there=True)
     # not in workflow
-    step_4 = wf['steps']['4']
-    tp_desc = tools[step_4['name']]
+    step_4 = self.wf['steps']['4']
+    tp_desc = self.tools[step_4['name']]
     paramlist = training.get_param_desc(
             step_params,
             step_inputs,
             tp_desc,
             0,
-            wf['steps'])
+            self.wf['steps'])
     assert paramlist == ''
     # correct one
-    tp_desc = tools[step_3['name']]
+    tp_desc = self.tools[step_3['name']]
     paramlist = training.get_param_desc(
         step_params,
         step_inputs,
         tp_desc,
         0,
-        wf['steps'])
+        self.wf['steps'])
     assert 'param-collection' in paramlist
     assert 'param-file' in paramlist
 
 
 def test_get_handson_box():
     """Test :func:`planemo.training.get_handson_box`."""
-    wf, tools = get_wf_a_tools()
     # test normal step
-    hand_boxes = training.get_handson_box(wf['steps']['3'], wf['steps'], tools)
+    hand_boxes = training.get_handson_box(self.wf['steps']['3'], self.wf['steps'], self.tools)
     assert '### {% icon hands_on %}' in hand_boxes
     assert '{% icon tool %} with the following parameters:' in hand_boxes
     assert ': .hands_on' in hand_boxes
     # test input step
-    hand_boxes = training.get_handson_box(wf['steps']['1'], wf['steps'], tools)
+    hand_boxes = training.get_handson_box(self.wf['steps']['1'], self.wf['steps'], self.tools)
     assert hand_boxes == ''
 
 
@@ -654,7 +562,7 @@ def test_init_tuto_metadata():
     metadata = training.init_tuto_metadata(kwds)
     assert metadata['title'] == kwds["tutorial_title"]
     assert "contributor1" in metadata['contributors']
-#
+
 
 def test_get_tuto_body():
     """Test :func:`planemo.training.get_tuto_body`."""

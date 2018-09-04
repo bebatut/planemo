@@ -2,8 +2,8 @@
 import click
 
 from planemo import options
-from planemo import training
 from planemo.cli import command_function
+from planemo.training import fill_data_library
 
 
 @click.command('training_fill_data_library')
@@ -13,4 +13,5 @@ from planemo.cli import command_function
 def cli(ctx, uris, **kwds):
     """Build training template from workflow."""
     kwds["no_dependency_resolution"] = True
-    training.fill_data_library(ctx, kwds)
+    print("test")
+    fill_data_library(kwds, ctx)
